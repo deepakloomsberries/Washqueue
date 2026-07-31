@@ -474,7 +474,7 @@ function openBookModal(opts) {
 
   const now = new Date();
   document.getElementById('inpDate').value = opts.date || ymd(now);
-  document.getElementById('inpTime').value = opts.time || hhmm(new Date(now.getTime() + 15 * 60000));
+  document.getElementById('inpTime').value = opts.time || hhmm(new Date(now.getTime() + 1 * 60000));
   document.getElementById('inpDate').min = ymd(now);
 
   document.getElementById('bookMsg').textContent = '';
