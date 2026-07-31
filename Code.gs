@@ -300,7 +300,11 @@ function getStatus_() {
     const active = bookings
       .filter(function (b) { return b.machineId === m.id && b.status !== 'Cancelled' && b.end > now; })
       .sort(function (a, b) { return a.start - b.start; });
-    const current = active.length ? active[0] : null;
+    // A booking is "current" only while it is actually running (already started
+    // and not yet ended). Future scheduled bookings are upcoming, not current —
+    // the machine stays free until they begin.
+    const current = (active.length && active[0].start <= now) ? active[0] : null;
+    const upcoming = current ? active.slice(1) : active;
     return {
       id: m.id,
       name: m.name,
@@ -308,7 +312,7 @@ function getStatus_() {
       note: m.note,
       current: current ? bookingPublic_(current) : null,
       freeAt: current ? current.end.toISOString() : null,
-      queue: active.slice(1).map(bookingPublic_)
+      queue: upcoming.map(bookingPublic_)
     };
   });
 
