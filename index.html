@@ -2,59 +2,205 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Regal Town PG Washing Machine Booking</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>I11 PG — Laundry</title>
+<meta name="description" content="Live washing machine availability, queueing and scheduling for I11 PG.">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#0D1917">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>🧺 Regal Town PG Washing Machines</h1>
-  <p>See what's free. Book your turn. No more guessing.</p>
-</header>
 
-<div class="container" id="machinesContainer">
-  <!-- machine cards injected here -->
+<div class="app">
+
+  <header class="app-header">
+    <div class="header-row">
+      <div>
+        <p class="eyebrow">I11 PG</p>
+        <h1>Laundry</h1>
+      </div>
+      <div class="live-status" id="liveStatus" aria-live="polite">
+        <span class="live-dot" id="liveDot"></span>
+        <span id="liveText">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- ============ HOME ============ -->
+    <section class="tab-panel" id="tab-home" data-tab="home">
+      <div id="homeList" class="machine-list">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </section>
+
+    <!-- ============ CALENDAR ============ -->
+    <section class="tab-panel" id="tab-calendar" data-tab="calendar" hidden>
+      <div class="cal-nav">
+        <button class="icon-btn" id="calPrev" aria-label="Previous day">
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="cal-date-btn" id="calDateLabel">Today</button>
+        <button class="icon-btn" id="calNext" aria-label="Next day">
+          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <p class="cal-hint" id="calHint">Tap an open slot to schedule that machine.</p>
+      <div class="cal-scroll" id="calScroll">
+        <div class="cal-inner" id="calInner"></div>
+      </div>
+      <div class="cal-legend">
+        <span><i class="legend-dot mine"></i>Yours</span>
+        <span><i class="legend-dot other"></i>Booked</span>
+        <span><i class="legend-dot maint"></i>Maintenance</span>
+      </div>
+    </section>
+
+    <!-- ============ UPCOMING ============ -->
+    <section class="tab-panel" id="tab-upcoming" data-tab="upcoming" hidden>
+      <div class="chip-row" role="tablist" aria-label="Filter bookings">
+        <button class="chip active" data-filter="all">All</button>
+        <button class="chip" data-filter="mine">Mine</button>
+      </div>
+      <div id="upcomingList" class="upcoming-list"></div>
+    </section>
+
+    <!-- ============ ADMIN ============ -->
+    <section class="tab-panel" id="tab-admin" data-tab="admin" hidden>
+      <div id="adminLocked" class="admin-lock">
+        <div class="lock-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28"><path d="M6 10V8a6 6 0 1112 0v2M5 10h14a1 1 0 011 1v9a1 1 0 01-1 1H5a1 1 0 01-1-1v-9a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
+        <h2>Admin access</h2>
+        <p class="muted">Enter the PIN to add machines, set maintenance, or change settings.</p>
+        <div class="field">
+          <input type="password" inputmode="numeric" id="adminPinInput" placeholder="PIN" autocomplete="off">
+        </div>
+        <button class="btn btn-primary" id="adminUnlockBtn">Unlock</button>
+        <p class="msg" id="adminLoginMsg"></p>
+      </div>
+
+      <div id="adminPanel" class="admin-panel" hidden>
+        <div class="admin-section">
+          <div class="section-head">
+            <h2>Machines</h2>
+            <button class="btn-link" id="adminLogoutBtn">Log out</button>
+          </div>
+          <div id="adminMachineList" class="admin-machine-list"></div>
+          <div class="add-machine-row">
+            <input type="text" id="newMachineName" placeholder="New machine name, e.g. Dryer 1" maxlength="40">
+            <button class="btn btn-secondary" id="addMachineBtn">Add</button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h2>Settings</h2>
+          <div class="settings-grid">
+            <label>Max booking length (min)
+              <input type="number" id="setMaxDuration" min="10" step="5">
+            </label>
+            <label>Min booking length (min)
+              <input type="number" id="setMinDuration" min="5" step="5">
+            </label>
+            <label>Max queue per machine
+              <input type="number" id="setMaxQueue" min="1" step="1">
+            </label>
+            <label>Schedule up to (days ahead)
+              <input type="number" id="setMaxAdvance" min="1" step="1">
+            </label>
+            <label>Quiet hours start <span class="hint">(optional)</span>
+              <input type="time" id="setQuietStart">
+            </label>
+            <label>Quiet hours end <span class="hint">(optional)</span>
+              <input type="time" id="setQuietEnd">
+            </label>
+            <label>Change PIN <span class="hint">(leave blank to keep)</span>
+              <input type="password" inputmode="numeric" id="setNewPin" placeholder="New PIN, min 4 digits">
+            </label>
+          </div>
+          <button class="btn btn-primary" id="saveSettingsBtn">Save settings</button>
+          <p class="msg" id="adminSettingsMsg"></p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tab-bar" aria-label="Sections">
+    <button class="tab-btn active" data-tab-btn="home">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="tab-btn" data-tab-btn="calendar">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>Calendar</span>
+    </button>
+    <button class="tab-btn" data-tab-btn="upcoming">
+      <svg viewBox="0 0 24 24"><path d="M12 7v5.5l3.8 2.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>Upcoming</span>
+    </button>
+    <button class="tab-btn" data-tab-btn="admin">
+      <svg viewBox="0 0 24 24"><path d="M12 8.4a3.6 3.6 0 100 7.2 3.6 3.6 0 000-7.2z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 12a7.4 7.4 0 00-.13-1.36l2-1.44-1.6-2.78-2.32.86a7.5 7.5 0 00-2.36-1.36L14.6 3.6h-3.2l-.4 2.32a7.5 7.5 0 00-2.36 1.36l-2.32-.86-1.6 2.78 2 1.44a7.4 7.4 0 000 2.72l-2 1.44 1.6 2.78 2.32-.86a7.5 7.5 0 002.36 1.36l.4 2.32h3.2l.4-2.32a7.5 7.5 0 002.36-1.36l2.32.86 1.6-2.78-2-1.44c.09-.45.13-.9.13-1.36z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      <span>Admin</span>
+    </button>
+  </nav>
+
 </div>
 
-<div class="container mybookings" id="myBookingsContainer" style="display:none;">
-  <h3 style="font-size:14px;color:#94a3b8;">My Bookings</h3>
-  <div id="myBookingsList"></div>
-</div>
-
-<footer>Made for Regal Town PG • Refreshes automatically</footer>
-
-<!-- Booking Modal -->
+<!-- ============ BOOKING MODAL ============ -->
 <div class="overlay" id="bookOverlay">
-  <div class="modal">
-    <h3 id="bookMachineTitle">Book Machine</h3>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bookTitle">
+    <h3 id="bookTitle">Book a machine</h3>
+
+    <div class="segmented" id="modeSegment">
+      <button class="seg-btn active" data-mode="queue">Use now</button>
+      <button class="seg-btn" data-mode="schedule">Schedule for later</button>
+    </div>
+
     <div class="field">
-      <label>Your Name</label>
-      <input type="text" id="inpName" placeholder="e.g. Rahul">
+      <label>Machine</label>
+      <select id="inpMachine"></select>
+    </div>
+
+    <div class="field-row" id="scheduleFields" hidden>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="inpDate">
+      </div>
+      <div class="field">
+        <label>Time</label>
+        <input type="time" id="inpTime">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Your name</label>
+      <input type="text" id="inpName" maxlength="40" placeholder="e.g. Rahul">
     </div>
     <div class="field">
-      <label>Room No (optional)</label>
-      <input type="text" id="inpRoom" placeholder="e.g. 204">
+      <label>Room no <span class="hint">(optional)</span></label>
+      <input type="text" id="inpRoom" maxlength="10" placeholder="e.g. 204">
     </div>
     <div class="field">
       <label>Duration</label>
-      <select id="inpDuration">
-        <option value="30">30 minutes</option>
-        <option value="45">45 minutes</option>
-        <option value="60" selected>1 hour</option>
-        <option value="90">1.5 hours</option>
-        <option value="120">2 hours</option>
-      </select>
+      <select id="inpDuration"></select>
     </div>
-    <div class="msg" id="bookMsg"></div>
+
+    <p class="msg" id="bookMsg"></p>
     <div class="toolbar">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitBooking()">Book / Join Queue</button>
+      <button class="btn btn-secondary" id="bookCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="bookSubmitBtn">Book</button>
     </div>
   </div>
 </div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="app.js"></script>
 </body>
