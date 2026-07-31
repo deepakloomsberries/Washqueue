@@ -1,6 +1,6 @@
 {
-  "name": "I11 PG Washing Machine Booking",
-  "short_name": "Washing Q",
+  "name": "Regal Town PG Washing Machine Booking",
+  "short_name": "RT Washing",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
