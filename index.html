@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>I11 PG Washing Machine Booking</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🧺 I11 PG Washing Machines</h1>
+  <p>See what's free. Book your turn. No more guessing.</p>
+</header>
+
+<div class="container" id="machinesContainer">
+  <!-- machine cards injected here -->
+</div>
+
+<div class="container mybookings" id="myBookingsContainer" style="display:none;">
+  <h3 style="font-size:14px;color:#94a3b8;">My Bookings</h3>
+  <div id="myBookingsList"></div>
+</div>
+
+<footer>Made for I11 PG • Refreshes automatically</footer>
+
+<!-- Booking Modal -->
+<div class="overlay" id="bookOverlay">
+  <div class="modal">
+    <h3 id="bookMachineTitle">Book Machine</h3>
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" id="inpName" placeholder="e.g. Rahul">
+    </div>
+    <div class="field">
+      <label>Room No (optional)</label>
+      <input type="text" id="inpRoom" placeholder="e.g. 204">
+    </div>
+    <div class="field">
+      <label>Duration</label>
+      <select id="inpDuration">
+        <option value="30">30 minutes</option>
+        <option value="45">45 minutes</option>
+        <option value="60" selected>1 hour</option>
+        <option value="90">1.5 hours</option>
+        <option value="120">2 hours</option>
+      </select>
+    </div>
+    <div class="msg" id="bookMsg"></div>
+    <div class="toolbar">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitBooking()">Book / Join Queue</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
