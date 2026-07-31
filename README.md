@@ -1,16 +1,40 @@
-# I11 PG — Washing Machine Booking App (Free, PWA)
+# I11 PG — Laundry (Free, installable web app)
 
-You'll do 3 things: (1) set up the Google Sheet + backend, (2) put in one link,
-(3) put the website files online for free. Takes about 15 minutes. Just follow in order.
+A live-status, queueing **and** scheduling app for the washing machines — plus an
+Admin tab so you can add machines later and mark one as "under maintenance."
+Still ₹0 to run, still just Google Sheets + GitHub Pages.
+
+**If you're setting this up for the first time**, do Parts 1–3 in order (about
+15 minutes). **If you already deployed an earlier version of this app**, read
+the callout at the end of Part 1 before you paste the new `Code.gs` in.
+
+---
+
+## What's in this version
+
+- **Home** — same as before: see each machine's status at a glance and book it.
+- **Calendar** — a real day-by-day timeline of every machine. Tap any open slot
+  to schedule that machine for later instead of joining the queue.
+- **Upcoming** — a simple list of everything coming up, with an "All / Mine" filter.
+- **Admin tab** — enter a PIN to:
+  - Add new machines whenever you buy one.
+  - Put a machine under maintenance (residents immediately see it's unavailable,
+    and anything already booked on it is cancelled automatically).
+  - Retire a machine for good, or bring one back.
+  - Change booking rules: max/min booking length, how many can queue at once,
+    how many days ahead people can schedule, optional quiet hours, and the
+    Admin PIN itself.
+- Still installable to a phone's home screen, still auto-refreshes, still free.
 
 ---
 
 ## PART 1 — Google Sheet + Apps Script (the "database" and brain)
 
-1. Go to https://sheets.google.com and create a **new blank spreadsheet**.
-   Name it anything, e.g. "I11 PG Washing Machine".
+1. Go to https://sheets.google.com and create a **new blank spreadsheet**
+   (or open the one you already made for this app).
 2. Click **Extensions → Apps Script**.
-3. Delete everything in the editor box, and paste the entire contents of **Code.gs** (the file I gave you).
+3. Delete everything in the editor box, and paste the entire contents of
+   **Code.gs** (the file included here).
 4. Click the **Save** icon (disk icon) at the top.
 5. Click **Deploy → New deployment**.
 6. Click the gear icon ⚙️ next to "Select type" → choose **Web app**.
@@ -18,72 +42,111 @@ You'll do 3 things: (1) set up the Google Sheet + backend, (2) put in one link,
    - Description: `washing machine api`
    - Execute as: **Me**
    - Who has access: **Anyone**
-8. Click **Deploy**.
-9. It will ask you to **Authorize access** — click through with your Google account (click "Advanced" → "Go to project (unsafe)" if Google warns you, this is normal for your own script).
-10. After deploying, you'll get a **Web app URL** that looks like:
-    `https://script.google.com/macros/s/AKfycb.../exec`
-    **Copy this URL.** This is your app's backend link.
+8. Click **Deploy**, then **Authorize access** with your Google account
+   (click "Advanced" → "Go to project (unsafe)" if Google warns you —
+   normal for your own script).
+9. Copy the **Web app URL** — looks like `https://script.google.com/macros/s/AKfycb.../exec`.
 
-That's it — the sheet will now auto-create a "Bookings" tab and manage everything by itself.
+The first time anyone opens the app, it will auto-create three tabs in your
+sheet: **Bookings**, **Machines** (seeded with "Washing Machine 1" and
+"Washing Machine 2"), and **Settings** (seeded with sensible defaults,
+including the starting Admin PIN — see below). You don't need to touch these
+yourself, but they're plain Google Sheet tabs, so you always can.
+
+**The Admin PIN starts as `1234`.** Open the site, go to the **Admin** tab,
+unlock with `1234`, and change it under Settings before you share the link
+— see Part 3.
+
+> **Upgrading from an earlier version of this app?** The Bookings sheet's
+> columns changed (machines are now tracked by an ID, and there's a new Mode
+> column). If your existing spreadsheet already has a **Bookings** tab from
+> before, delete that one tab first (right-click its tab at the bottom →
+> Delete) and let the new Code.gs recreate it. Your Machines/Settings tabs
+> will be created fresh alongside it. This only affects historical bookings —
+> nothing else in your sheet is touched.
 
 ---
 
 ## PART 2 — Connect the frontend to your backend
 
-1. Open the file **app.js**.
+1. Open **app.js**.
 2. Find this line near the top:
    ```
    const APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
    ```
-3. Replace the text inside the quotes with the URL you copied in Part 1, step 10.
-   Save the file.
+3. Replace the text inside the quotes with the URL from Part 1, step 9. Save.
 
 ---
 
 ## PART 3 — Put the website online for FREE (GitHub Pages)
 
-This gives you a real installable app link, ₹0 cost, no domain needed.
-
 1. Go to https://github.com and create a free account (if you don't have one).
-2. Click **+ → New repository**. Name it e.g. `i11-washing`. Make it **Public**. Create it.
-3. Click **Add file → Upload files**, and upload all these files together:
-   - `index.html`
-   - `app.js`
-   - `style.css`
-   - `manifest.json`
-   - `sw.js`
-   - `icon-192.png`
-   - `icon-512.png`
+2. **New repo:** Click **+ → New repository**, name it (e.g. `i11-washing`),
+   make it **Public**, and create it.
+   **Existing repo (updating):** open your existing repo instead.
+3. Click **Add file → Upload files**, and upload all of these together:
+   - `index.html`, `app.js`, `style.css`, `manifest.json`, `sw.js`,
+     `icon-192.png`, `icon-512.png`
+   — if you're updating an existing repo, this will overwrite the old versions.
 4. Click **Commit changes**.
-5. Go to the repo's **Settings → Pages** (left sidebar).
-6. Under "Branch", select `main` and folder `/ (root)`, click **Save**.
-7. Wait 1–2 minutes. Your site will be live at:
-   `https://YOUR-USERNAME.github.io/i11-washing/`
+5. **First time only:** go to **Settings → Pages**, set Branch to `main` /
+   folder `/ (root)`, and Save. Wait 1–2 minutes for the first build.
+6. Visit `https://YOUR-USERNAME.github.io/YOUR-REPO-NAME/`.
+   - If you had the old version open already (especially if you or a resident
+     "Added to Home Screen"), do one hard refresh — close the tab and reopen
+     it, or reload twice. The app updates itself in the background after that
+     and you won't need to do this again.
 
-**Share that link in your PG's WhatsApp group.** Anyone who opens it on their phone can tap
-"Add to Home Screen" (Chrome: ⋮ menu → Add to Home Screen) and it behaves like a real app icon.
+**Share that link in your PG's WhatsApp group.** Anyone who opens it on their
+phone can tap "Add to Home Screen" and it behaves like a real app icon.
 
 ---
 
 ## How it works for your residents
 
-- They open the app, see both machines: **FREE** or **IN USE by <name> until <time>**.
-- They tap **Book Now / Join Queue**, enter name + room + how long they need it.
-- If the machine is free, their turn starts immediately. If someone's using it, they're
-  automatically placed in the queue after the last booked person — no clash, no argument.
-- "My Bookings" at the bottom lets them **cancel** or **mark done early** (so the next
-  person doesn't have to wait the full time if they finish early).
-- The screen auto-refreshes every 15 seconds.
+- **Home** shows every machine: **Free**, **In use by \<name\> until \<time\>**,
+  or **Under maintenance**.
+- **Book now / Join queue** — if the machine's free, their turn starts right
+  away. If it's busy, they're queued automatically after whoever's ahead of
+  them.
+- **Schedule for later** (in the same booking screen, or by tapping an open
+  slot on the **Calendar** tab) — pick a future date and time instead. The
+  app won't let two bookings overlap on the same machine.
+- **Upcoming** lists everything coming up on every machine; switch to "Mine"
+  to see just their own.
+- **Mark done early / Cancel** on their own bookings works the same as before
+  (remembered in the browser, same as "My Bookings" did previously).
+- The screen refreshes automatically roughly every 20 seconds.
+
+## How it works for you (Admin)
+
+- Open the **Admin** tab, enter the PIN.
+- **Machines:** rename one, add a note, set it to **Maintenance** (cancels
+  its upcoming bookings and shows residents it's unavailable), **Retire** one
+  for good, or bring one back with **Reactivate**. Add new ones any time with
+  the box at the bottom.
+- **Settings:** change booking length limits, queue size, how far ahead
+  people can schedule, optional quiet hours (e.g. no new bookings 10pm–7am),
+  and the PIN itself.
+- From the **Upcoming** tab, once you're unlocked as Admin, you can also
+  cancel *anyone's* booking (not just your own) — handy for sorting out
+  disputes or a booking someone forgot to cancel.
 
 ## Cost
-₹0. GitHub Pages and Google Apps Script are both free forever for this kind of use.
-If later you want a nicer custom domain (like `i11pg.in`) that costs about ₹500–800/year —
-completely optional, the app works fine without it.
 
-## Small limitations to know (can improve later)
-- No login/password — anyone with the link can book (fine for a trusted PG group).
-- Cancelling relies on the browser remembering "my bookings" (localStorage) — if someone
-  clears their browser data they'd lose the ability to self-cancel (an admin can still
-  cancel manually by editing the Google Sheet directly).
-- Max 4 people can queue per machine at once, and max booking length is 3 hours —
-  both easy to change in Code.gs if needed.
+₹0. GitHub Pages and Google Apps Script are both free for this kind of use.
+A custom domain is optional (~₹500–800/year) and never required.
+
+## Small limitations to know (by design, to keep this free and simple)
+
+- Residents still don't need an account — anyone with the link can book,
+  same trust-based model as before.
+- The Admin PIN is a simple shared gate, not a full login system — good
+  enough for keeping casual visitors out of Settings, not bank-grade security.
+  Change it from the default, and don't reuse a PIN you use elsewhere.
+- "My Bookings" and "stay logged in as Admin" both rely on the browser
+  remembering things (localStorage) — clearing browser data loses that,
+  though an Admin can still cancel any booking from the Upcoming tab, or by
+  editing the Google Sheet directly.
+- Default limits (changeable in Admin → Settings): 3-hour max booking,
+  10-minute minimum, 6 queued per machine, schedule up to 7 days ahead.
