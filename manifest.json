@@ -1,7 +1,7 @@
 {
-  "name": "I11 PG — Laundry",
+  "name": "Regal Town 1BK and PG — Laundry",
   "short_name": "Laundry",
-  "description": "Live washing machine availability, queueing and scheduling for I11 PG.",
+  "description": "Live washing machine availability, queueing and scheduling for Regal Town 1BK and PG.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
