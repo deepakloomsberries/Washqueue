@@ -2,7 +2,7 @@
    I11 PG — LAUNDRY — FRONTEND
    Set APPS_SCRIPT_URL below after deploying Code.gs (see README Part 2).
    ============================================================================ */
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_C704Rzfsgz-jQSV85_v06-XbPOCXSrjF7j6WiyMuT3O8EtjZ4lKl-YrDCIRDx5E/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxuVvyYZMyXdp3F0-uBhCHw0mZtzZbb_JjE4JmmXZbkzv8QOpeayfVaAVno72QF368/exec";
 const NEEDS_SETUP = APPS_SCRIPT_URL.indexOf('PASTE_YOUR') !== -1;
 
 const STATUS_POLL_MS = 20000;
