@@ -114,6 +114,12 @@
             <label>Schedule up to (days ahead)
               <input type="number" id="setMaxAdvance" min="1" step="1">
             </label>
+            <label>Times a booking can be extended
+              <input type="number" id="setMaxExtensions" min="0" step="1">
+            </label>
+            <label>Minutes added per extension
+              <input type="number" id="setMaxExtendMin" min="1" step="5">
+            </label>
             <label>Quiet hours start <span class="hint">(optional)</span>
               <input type="time" id="setQuietStart">
             </label>
@@ -196,6 +202,84 @@
     <div class="toolbar">
       <button class="btn btn-secondary" id="bookCancelBtn">Cancel</button>
       <button class="btn btn-primary" id="bookSubmitBtn">Book</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADD TIME (EXTEND) MODAL ============ -->
+<div class="overlay" id="extendOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="extendTitle">
+    <h3 id="extendTitle">Add time</h3>
+    <p class="modal-sub" id="extendSub"></p>
+    <div class="opt-row" id="extendOptions"></div>
+    <p class="msg" id="extendMsg"></p>
+    <div class="toolbar">
+      <button class="btn btn-secondary" data-close="extend">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ REPORT "IN USE (NOT BOOKED)" MODAL ============ -->
+<div class="overlay" id="reportOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <h3 id="reportTitle">Someone’s using it?</h3>
+    <p class="modal-sub">Flag this machine as busy so nobody books it by mistake. Enter the time still showing on the machine.</p>
+    <p class="modal-machine" id="reportMachineName"></p>
+    <div class="field-row">
+      <div class="field"><label>Hours left</label><input type="number" id="reportHours" min="0" max="6" step="1" value="1"></div>
+      <div class="field"><label>Minutes left</label><input type="number" id="reportMins" min="0" max="59" step="1" value="0"></div>
+    </div>
+    <div class="chip-row quick-row" id="reportQuick">
+      <button type="button" class="chip" data-min="30">30 min</button>
+      <button type="button" class="chip" data-min="45">45 min</button>
+      <button type="button" class="chip" data-min="60">1 hr</button>
+      <button type="button" class="chip" data-min="90">1½ hr</button>
+    </div>
+    <p class="msg" id="reportMsg"></p>
+    <div class="toolbar">
+      <button class="btn btn-secondary" data-close="report">Cancel</button>
+      <button class="btn btn-primary" id="reportSubmitBtn">Mark in use</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VOLUNTEER / CLAIM MODAL ============ -->
+<div class="overlay" id="claimOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="claimTitle">
+    <h3 id="claimTitle">This is me</h3>
+    <p class="modal-sub">Put your name on this session so people know who’s using <b id="claimMachineName"></b>.</p>
+    <div class="field"><label>Your name</label><input type="text" id="claimName" maxlength="40" placeholder="e.g. Rahul"></div>
+    <div class="field"><label>Room no <span class="hint">(optional)</span></label><input type="text" id="claimRoom" maxlength="10" placeholder="e.g. 204"></div>
+    <p class="msg" id="claimMsg"></p>
+    <div class="toolbar">
+      <button class="btn btn-secondary" data-close="claim">Cancel</button>
+      <button class="btn btn-primary" id="claimSubmitBtn">Save my name</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CANCEL WITH REASON MODAL ============ -->
+<div class="overlay" id="cancelOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+    <h3 id="cancelTitle">Cancel booking</h3>
+    <p class="modal-sub">Why are you cancelling?</p>
+    <div class="reason-list">
+      <label class="reason-opt"><input type="radio" name="cancelReason" value="not_needed" checked><span>I don’t need it anymore</span></label>
+      <label class="reason-opt"><input type="radio" name="cancelReason" value="occupied"><span>Someone’s already using it (not booked)</span></label>
+      <label class="reason-opt"><input type="radio" name="cancelReason" value="other"><span>Other</span></label>
+    </div>
+    <div id="cancelOccupiedFields" hidden>
+      <p class="modal-sub">How much time is left showing on the machine?</p>
+      <div class="field-row">
+        <div class="field"><label>Hours</label><input type="number" id="cancelHours" min="0" max="6" step="1" value="1"></div>
+        <div class="field"><label>Minutes</label><input type="number" id="cancelMins" min="0" max="59" step="1" value="0"></div>
+      </div>
+      <p class="hint">We’ll show this machine as “in use by someone (not booked)” for that long so nobody books it by mistake.</p>
+    </div>
+    <p class="msg" id="cancelMsg"></p>
+    <div class="toolbar">
+      <button class="btn btn-secondary" data-close="cancel">Keep booking</button>
+      <button class="btn btn-danger" id="cancelConfirmBtn">Cancel booking</button>
     </div>
   </div>
 </div>

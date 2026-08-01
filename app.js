@@ -25,6 +25,7 @@ const state = {
 };
 
 let toastTimer = null;
+let reportCtx = {}, claimCtx = {}, cancelCtx = {};
 
 // =============================== UTILITIES ==================================
 
@@ -203,9 +204,10 @@ function ringSVG(fraction, kind) {
 
 function machineCardHTML(m) {
   const isMaint = m.status === 'Maintenance';
-  const isFree = !isMaint && !m.current;
-  const fraction = (!isMaint && m.current)
-    ? (Date.now() - new Date(m.current.start).getTime()) / (new Date(m.current.end).getTime() - new Date(m.current.start).getTime())
+  const cur = m.current;
+  const isFree = !isMaint && !cur;
+  const fraction = (!isMaint && cur)
+    ? (Date.now() - new Date(cur.start).getTime()) / (new Date(cur.end).getTime() - new Date(cur.start).getTime())
     : 0;
   const ring = ringSVG(fraction, isMaint ? 'maint' : (isFree ? 'free' : 'busy'));
 
@@ -215,9 +217,15 @@ function machineCardHTML(m) {
   } else if (isFree) {
     detail = '<p class="mc-detail">Ready to use right now</p>';
   } else {
-    detail = '<p class="mc-detail">Used by <b>' + esc(m.current.name) + '</b>' + (m.current.room ? ' (Room ' + esc(m.current.room) + ')' : '') + '</p>' +
-      '<p class="mc-detail">Free at <b>' + fmtTime(m.current.end) + '</b></p>' +
-      '<p class="mc-countdown">' + countdownText(m.current.end) + '</p>';
+    const whoLine = cur.claimable
+      ? '<p class="mc-detail">Used by <b>Someone (not booked)</b></p><p class="mc-note">Reported in use in person — is it you?</p>'
+      : '<p class="mc-detail">Used by <b>' + (isMine(cur.id) ? 'You' : esc(cur.name)) + '</b>' +
+        (cur.room ? ' (Room ' + esc(cur.room) + ')' : '') + '</p>' +
+        (cur.reported ? '<p class="mc-note">Reported in use in person</p>' : '');
+    detail = whoLine +
+      '<p class="mc-detail">Free at <b>' + fmtTime(cur.end) + '</b>' +
+      (cur.extUsed ? ' · extended ' + cur.extUsed + '×' : '') + '</p>' +
+      '<p class="mc-countdown">' + countdownText(cur.end) + '</p>';
   }
 
   let queueHtml = '';
@@ -231,7 +239,28 @@ function machineCardHTML(m) {
       '</div>';
   }
 
-  const btnLabel = isMaint ? 'Under maintenance' : (isFree ? 'Book now' : 'Join queue');
+  // Action buttons — a primary CTA plus optional context-specific extras.
+  let actions;
+  if (isMaint) {
+    actions = '<button class="btn btn-primary mc-cta" disabled>Under maintenance</button>';
+  } else if (isFree) {
+    actions = '<button class="btn btn-primary mc-cta" data-action="book" data-machine-id="' + m.id + '">Book now</button>' +
+      '<button class="btn btn-ghost mc-cta" data-action="report" data-machine-id="' + m.id + '" data-machine-name="' + esc(m.name) + '">Someone’s using it?</button>';
+  } else {
+    actions = '<button class="btn btn-primary mc-cta" data-action="book" data-machine-id="' + m.id + '">Join queue</button>';
+    const canExtend = isMine(cur.id) && !cur.reported && cur.extUsed < cur.extMax && cur.extendableMin >= 1;
+    if (canExtend) {
+      actions += '<button class="btn btn-secondary mc-cta" data-action="extend" data-id="' + cur.id +
+        '" data-machine-name="' + esc(m.name) + '" data-end="' + cur.end +
+        '" data-ext-used="' + cur.extUsed + '" data-ext-max="' + cur.extMax +
+        '" data-extendable="' + cur.extendableMin + '">Add time</button>';
+    }
+    if (cur.claimable) {
+      actions += '<button class="btn btn-secondary mc-cta" data-action="claim" data-id="' + cur.id +
+        '" data-machine-name="' + esc(m.name) + '">This is me</button>';
+    }
+  }
+
   return '<div class="machine-card ' + (isMaint ? 'is-maintenance' : '') + '">' +
     '<div class="mc-top">' +
     '<div class="mc-ring ' + (!isMaint && !isFree ? 'glow' : '') + '">' + ring + '</div>' +
@@ -241,7 +270,7 @@ function machineCardHTML(m) {
     detail +
     '</div></div>' +
     queueHtml +
-    '<button class="btn btn-primary mc-cta" data-action="book" data-machine-id="' + m.id + '" ' + (isMaint ? 'disabled' : '') + '>' + btnLabel + '</button>' +
+    '<div class="mc-actions">' + actions + '</div>' +
     '</div>';
 }
 
@@ -370,7 +399,7 @@ function renderUpcoming() {
       '<div class="ur-who">' + (mine ? '<span class="you">You</span>' : esc(b.name)) + (b.room ? ' · Room ' + esc(b.room) : '') + '</div></div>' +
       '<div class="ur-actions">' +
       (mine ? '<button data-action="finish" data-id="' + b.id + '" title="Mark done early">' + ICON_CHECK + '</button>' : '') +
-      ((mine || showAdminCancel) ? '<button class="danger" data-action="cancel" data-id="' + b.id + '" title="Cancel">' + ICON_X + '</button>' : '') +
+      ((mine || showAdminCancel) ? '<button class="danger" data-action="cancel" data-id="' + b.id + '" data-machine-id="' + b.machineId + '" title="Cancel">' + ICON_X + '</button>' : '') +
       '</div></div>';
   });
   list.innerHTML = html;
@@ -431,6 +460,8 @@ function fillSettingsForm(s) {
   document.getElementById('setMinDuration').value = s.minDurationMin;
   document.getElementById('setMaxQueue').value = s.maxQueuePerMachine;
   document.getElementById('setMaxAdvance').value = s.maxAdvanceDays;
+  document.getElementById('setMaxExtensions').value = s.maxExtensions;
+  document.getElementById('setMaxExtendMin').value = s.maxExtendMin;
   document.getElementById('setQuietStart').value = s.quietHoursStart || '';
   document.getElementById('setQuietEnd').value = s.quietHoursEnd || '';
   document.getElementById('setNewPin').value = '';
@@ -528,6 +559,139 @@ async function submitBooking() {
   }
 }
 
+// ================= ADD TIME / REPORT / CLAIM / CANCEL MODALS =================
+
+function closeOverlay(name) { document.getElementById(name + 'Overlay').classList.remove('open'); }
+
+// Total minutes from a paired hours+minutes input.
+function minutesFromFields(hoursId, minsId) {
+  const h = Math.max(0, parseInt(document.getElementById(hoursId).value, 10) || 0);
+  const m = Math.max(0, parseInt(document.getElementById(minsId).value, 10) || 0);
+  return h * 60 + m;
+}
+
+// ---- Add time (extend a running booking) ----
+function openExtendModal(d) {
+  const used = parseInt(d.extUsed, 10) || 0;
+  const max = parseInt(d.extMax, 10) || 0;
+  const extendable = parseInt(d.extendable, 10) || 0;
+  const remaining = max - used;
+  document.getElementById('extendSub').innerHTML =
+    esc(d.machineName) + ' · free at <b>' + fmtTime(d.end) + '</b><br>' +
+    remaining + ' extension' + (remaining === 1 ? '' : 's') + ' left · up to ' + extendable + ' min available now';
+  let opts = [10, 15, 20].filter(function (v) { return v <= extendable; });
+  if (!opts.length && extendable >= 1) opts = [extendable];
+  const box = document.getElementById('extendOptions');
+  box.dataset.id = d.id;
+  box.innerHTML = opts.length
+    ? opts.map(function (v) { return '<button type="button" class="btn btn-secondary opt-btn" data-min="' + v + '">+' + v + ' min</button>'; }).join('')
+    : '<p class="hint">No room to add time before the next booking.</p>';
+  document.getElementById('extendMsg').textContent = '';
+  document.getElementById('extendOverlay').classList.add('open');
+}
+
+async function submitExtend(id, minutes, btn) {
+  const msg = document.getElementById('extendMsg');
+  btn.disabled = true;
+  showMsg(msg, 'Adding time…', '');
+  try {
+    const res = await postJSON({ action: 'extend', id: id, minutes: minutes });
+    if (res.error) { showMsg(msg, res.error, 'error'); btn.disabled = false; return; }
+    showMsg(msg, 'Added ' + minutes + ' min. ' +
+      (res.remaining > 0 ? res.remaining + ' extension' + (res.remaining === 1 ? '' : 's') + ' left.' : 'No more extensions after this.'), 'success');
+    setTimeout(function () { closeOverlay('extend'); fetchAll(); }, 1000);
+  } catch (e) { showMsg(msg, 'Something went wrong. Try again.', 'error'); btn.disabled = false; }
+}
+
+// ---- Report a machine as in use by someone who didn't book ----
+function openReportModal(opts) {
+  reportCtx = { machineId: opts.machineId };
+  document.getElementById('reportMachineName').textContent = opts.machineName || '';
+  document.getElementById('reportHours').value = 1;
+  document.getElementById('reportMins').value = 0;
+  document.getElementById('reportMsg').textContent = '';
+  document.getElementById('reportSubmitBtn').disabled = false;
+  document.getElementById('reportOverlay').classList.add('open');
+}
+
+async function submitReport() {
+  const msg = document.getElementById('reportMsg');
+  const btn = document.getElementById('reportSubmitBtn');
+  const minutes = minutesFromFields('reportHours', 'reportMins');
+  if (minutes < 1) { showMsg(msg, 'Enter the time left showing on the machine.', 'error'); return; }
+  btn.disabled = true;
+  showMsg(msg, 'Marking in use…', '');
+  try {
+    const res = await postJSON({ action: 'report_unbooked', machineId: reportCtx.machineId, minutes: minutes });
+    if (res.error) { showMsg(msg, res.error, 'error'); btn.disabled = false; return; }
+    showMsg(msg, res.alreadyRunning ? 'Thanks — it was already marked in use.' : 'Thanks — marked in use for everyone.', 'success');
+    setTimeout(function () { closeOverlay('report'); fetchAll(); }, 1000);
+  } catch (e) { showMsg(msg, 'Something went wrong. Try again.', 'error'); btn.disabled = false; }
+}
+
+// ---- Volunteer to claim an "Unknown person" session ----
+function openClaimModal(opts) {
+  claimCtx = { id: opts.id };
+  document.getElementById('claimMachineName').textContent = opts.machineName || 'this machine';
+  document.getElementById('claimName').value = localStorage.getItem('lastName') || '';
+  document.getElementById('claimRoom').value = localStorage.getItem('lastRoom') || '';
+  document.getElementById('claimMsg').textContent = '';
+  document.getElementById('claimSubmitBtn').disabled = false;
+  document.getElementById('claimOverlay').classList.add('open');
+}
+
+async function submitClaim() {
+  const msg = document.getElementById('claimMsg');
+  const btn = document.getElementById('claimSubmitBtn');
+  const name = document.getElementById('claimName').value.trim();
+  const room = document.getElementById('claimRoom').value.trim();
+  if (!name) { showMsg(msg, 'Enter your name.', 'error'); return; }
+  btn.disabled = true;
+  showMsg(msg, 'Saving…', '');
+  try {
+    const res = await postJSON({ action: 'claim_unbooked', id: claimCtx.id, name: name, room: room });
+    if (res.error) { showMsg(msg, res.error, 'error'); btn.disabled = false; return; }
+    localStorage.setItem('lastName', name);
+    if (room) localStorage.setItem('lastRoom', room);
+    showMsg(msg, 'Done — your name is on it now.', 'success');
+    setTimeout(function () { closeOverlay('claim'); fetchAll(); }, 900);
+  } catch (e) { showMsg(msg, 'Something went wrong. Try again.', 'error'); btn.disabled = false; }
+}
+
+// ---- Cancel your own booking, with a reason ----
+function openCancelModal(opts) {
+  cancelCtx = { id: opts.id, machineId: opts.machineId };
+  document.querySelector('#cancelOverlay input[value="not_needed"]').checked = true;
+  document.getElementById('cancelOccupiedFields').hidden = true;
+  document.getElementById('cancelHours').value = 1;
+  document.getElementById('cancelMins').value = 0;
+  document.getElementById('cancelMsg').textContent = '';
+  document.getElementById('cancelConfirmBtn').disabled = false;
+  document.getElementById('cancelOverlay').classList.add('open');
+}
+
+async function submitCancel() {
+  const msg = document.getElementById('cancelMsg');
+  const btn = document.getElementById('cancelConfirmBtn');
+  const choice = document.querySelector('#cancelOverlay input[name="cancelReason"]:checked').value;
+  btn.disabled = true;
+  showMsg(msg, 'Cancelling…', '');
+  try {
+    let res;
+    if (choice === 'occupied') {
+      const minutes = minutesFromFields('cancelHours', 'cancelMins');
+      if (minutes < 1) { showMsg(msg, 'Enter the time left showing on the machine.', 'error'); btn.disabled = false; return; }
+      res = await postJSON({ action: 'report_unbooked', machineId: cancelCtx.machineId, minutes: minutes, cancelId: cancelCtx.id, reason: 'Someone was already using it (not booked)' });
+    } else {
+      res = await postJSON({ action: 'cancel', id: cancelCtx.id, reason: choice === 'other' ? 'Other' : 'No longer needed' });
+    }
+    if (res.error) { showMsg(msg, res.error, 'error'); btn.disabled = false; return; }
+    removeMyBooking(cancelCtx.id);
+    showMsg(msg, choice === 'occupied' ? 'Cancelled — machine marked in use for everyone.' : 'Booking cancelled.', 'success');
+    setTimeout(function () { closeOverlay('cancel'); fetchAll(); }, 900);
+  } catch (e) { showMsg(msg, 'Something went wrong. Try again.', 'error'); btn.disabled = false; }
+}
+
 // ============================ EVENT WIRING (once) ============================
 
 function wireEvents() {
@@ -536,8 +700,18 @@ function wireEvents() {
   });
 
   document.getElementById('homeList').addEventListener('click', function (e) {
-    const btn = e.target.closest('[data-action="book"]');
-    if (btn && !btn.disabled) openBookModal({ machineId: btn.dataset.machineId, mode: 'queue' });
+    const btn = e.target.closest('button[data-action]');
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.action;
+    if (action === 'book') {
+      openBookModal({ machineId: btn.dataset.machineId, mode: 'queue' });
+    } else if (action === 'report') {
+      openReportModal({ machineId: btn.dataset.machineId, machineName: btn.dataset.machineName });
+    } else if (action === 'extend') {
+      openExtendModal(btn.dataset);
+    } else if (action === 'claim') {
+      openClaimModal({ id: btn.dataset.id, machineName: btn.dataset.machineName });
+    }
   });
 
   document.getElementById('calPrev').addEventListener('click', function () {
@@ -586,11 +760,15 @@ function wireEvents() {
       const res = await postJSON({ action: 'finish', id: finishBtn.dataset.id });
       if (res.error) { showToast(res.error); finishBtn.disabled = false; } else { showToast('Marked done — thanks for freeing it up early.'); fetchAll(); }
     } else if (cancelBtn) {
-      cancelBtn.disabled = true;
       const id = cancelBtn.dataset.id;
-      const mine = isMine(id);
-      const res = mine ? await postJSON({ action: 'cancel', id: id }) : await postJSON({ action: 'admin_cancel_booking', pin: state.adminPin, id: id });
-      if (res.error) { showToast(res.error); cancelBtn.disabled = false; } else { if (mine) removeMyBooking(id); showToast('Booking cancelled.'); fetchAll(); }
+      if (isMine(id)) {
+        // Owner cancel → ask a reason (and optionally report unbooked usage).
+        openCancelModal({ id: id, machineId: cancelBtn.dataset.machineId });
+      } else {
+        cancelBtn.disabled = true;
+        const res = await postJSON({ action: 'admin_cancel_booking', pin: state.adminPin, id: id });
+        if (res.error) { showToast(res.error); cancelBtn.disabled = false; } else { showToast('Booking cancelled.'); fetchAll(); }
+      }
     }
   });
 
@@ -600,6 +778,37 @@ function wireEvents() {
   document.getElementById('bookCancelBtn').addEventListener('click', closeModal);
   document.getElementById('bookSubmitBtn').addEventListener('click', submitBooking);
   document.getElementById('bookOverlay').addEventListener('click', function (e) { if (e.target.id === 'bookOverlay') closeModal(); });
+
+  // --- Add time / report / claim / cancel modals ---
+  document.querySelectorAll('[data-close]').forEach(function (b) {
+    b.addEventListener('click', function () { closeOverlay(b.dataset.close); });
+  });
+  ['extend', 'report', 'claim', 'cancel'].forEach(function (name) {
+    const ov = document.getElementById(name + 'Overlay');
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeOverlay(name); });
+  });
+
+  document.getElementById('extendOptions').addEventListener('click', function (e) {
+    const opt = e.target.closest('.opt-btn');
+    if (opt) submitExtend(this.dataset.id, parseInt(opt.dataset.min, 10), opt);
+  });
+
+  document.getElementById('reportSubmitBtn').addEventListener('click', submitReport);
+  document.getElementById('reportQuick').addEventListener('click', function (e) {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const total = parseInt(chip.dataset.min, 10);
+    document.getElementById('reportHours').value = Math.floor(total / 60);
+    document.getElementById('reportMins').value = total % 60;
+  });
+
+  document.getElementById('claimSubmitBtn').addEventListener('click', submitClaim);
+  document.getElementById('cancelConfirmBtn').addEventListener('click', submitCancel);
+  document.querySelectorAll('#cancelOverlay input[name="cancelReason"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      document.getElementById('cancelOccupiedFields').hidden = document.querySelector('#cancelOverlay input[name="cancelReason"]:checked').value !== 'occupied';
+    });
+  });
 
   document.getElementById('adminUnlockBtn').addEventListener('click', async function () {
     const pinInput = document.getElementById('adminPinInput');
@@ -670,6 +879,8 @@ function wireEvents() {
       MIN_DURATION_MIN: document.getElementById('setMinDuration').value,
       MAX_QUEUE_PER_MACHINE: document.getElementById('setMaxQueue').value,
       MAX_ADVANCE_DAYS: document.getElementById('setMaxAdvance').value,
+      MAX_EXTENSIONS: document.getElementById('setMaxExtensions').value,
+      MAX_EXTEND_MIN: document.getElementById('setMaxExtendMin').value,
       QUIET_HOURS_START: document.getElementById('setQuietStart').value,
       QUIET_HOURS_END: document.getElementById('setQuietEnd').value
     };

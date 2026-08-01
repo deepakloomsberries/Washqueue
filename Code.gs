@@ -25,14 +25,16 @@ const SETTINGS_DEFAULTS = {
   MAX_QUEUE_PER_MACHINE: 6,     // max bookings waiting on one machine at once
   MAX_ADVANCE_DAYS: 7,          // how far ahead "Schedule for later" allows
   QUIET_HOURS_START: '',        // e.g. '22:00' — blank means no restriction
-  QUIET_HOURS_END: ''           // e.g. '07:00'
+  QUIET_HOURS_END: '',          // e.g. '07:00'
+  MAX_EXTENSIONS: 2,            // how many times a running booking can be extended
+  MAX_EXTEND_MIN: 20            // most minutes that can be added in one extension
 };
 
 const SHEET_BOOKINGS = 'Bookings';
 const SHEET_MACHINES = 'Machines';
 const SHEET_SETTINGS = 'Settings';
 
-const BOOKINGS_HEADER = ['ID', 'Name', 'Room', 'MachineID', 'StartTime', 'EndTime', 'Status', 'Mode', 'CreatedAt'];
+const BOOKINGS_HEADER = ['ID', 'Name', 'Room', 'MachineID', 'StartTime', 'EndTime', 'Status', 'Mode', 'CreatedAt', 'Extensions', 'Reason'];
 const MACHINES_HEADER = ['MachineID', 'Name', 'Status', 'Note', 'CreatedAt'];
 const SETTINGS_HEADER = ['Key', 'Value'];
 
@@ -66,7 +68,10 @@ function doPost(e) {
     switch (data.action) {
       case 'book': result = bookMachine_(data); break;
       case 'finish': result = finishNow_(data.id); break;
-      case 'cancel': result = cancelBooking_(data.id); break;
+      case 'cancel': result = cancelBooking_(data.id, data.reason); break;
+      case 'extend': result = extendBooking_(data); break;
+      case 'report_unbooked': result = reportUnbooked_(data); break;
+      case 'claim_unbooked': result = claimUnbooked_(data); break;
       case 'admin_login': result = adminLogin_(data.pin); break;
       case 'admin_add_machine': result = adminAddMachine_(data.pin, data.name); break;
       case 'admin_update_machine': result = adminUpdateMachine_(data.pin, data.machineId, data.fields || {}); break;
@@ -121,6 +126,17 @@ function getMachinesRaw_() {
   return out;
 }
 
+// Bookings sheet, guaranteeing the header row is wide enough for columns added
+// in later versions (Extensions, Reason). Older sheets are migrated in place the
+// first time they are opened for a write.
+function getBookingsSheet_() {
+  const sheet = getSheet_(SHEET_BOOKINGS, BOOKINGS_HEADER);
+  if (sheet.getLastColumn() < BOOKINGS_HEADER.length) {
+    sheet.getRange(1, 1, 1, BOOKINGS_HEADER.length).setValues([BOOKINGS_HEADER]);
+  }
+  return sheet;
+}
+
 function getBookingsRaw_() {
   const sheet = getSheet_(SHEET_BOOKINGS, BOOKINGS_HEADER);
   const data = sheet.getDataRange().getValues();
@@ -137,7 +153,9 @@ function getBookingsRaw_() {
       start: new Date(row[4]),
       end: new Date(row[5]),
       status: String(row[6] || 'Active'),
-      mode: String(row[7] || 'queue')
+      mode: String(row[7] || 'queue'),
+      extensions: parseInt(row[9], 10) || 0,   // column J — blank on legacy rows
+      reason: String(row[10] || '')            // column K
     });
   }
   return out;
@@ -163,7 +181,9 @@ function getSettings_() {
     MAX_QUEUE_PER_MACHINE: parseInt(map.MAX_QUEUE_PER_MACHINE, 10) || SETTINGS_DEFAULTS.MAX_QUEUE_PER_MACHINE,
     MAX_ADVANCE_DAYS: parseInt(map.MAX_ADVANCE_DAYS, 10) || SETTINGS_DEFAULTS.MAX_ADVANCE_DAYS,
     QUIET_HOURS_START: (map.QUIET_HOURS_START || '').toString().trim(),
-    QUIET_HOURS_END: (map.QUIET_HOURS_END || '').toString().trim()
+    QUIET_HOURS_END: (map.QUIET_HOURS_END || '').toString().trim(),
+    MAX_EXTENSIONS: isNaN(parseInt(map.MAX_EXTENSIONS, 10)) ? SETTINGS_DEFAULTS.MAX_EXTENSIONS : parseInt(map.MAX_EXTENSIONS, 10),
+    MAX_EXTEND_MIN: parseInt(map.MAX_EXTEND_MIN, 10) || SETTINGS_DEFAULTS.MAX_EXTEND_MIN
   };
 }
 
@@ -185,7 +205,9 @@ function publicSettings_(s) {
     maxQueuePerMachine: s.MAX_QUEUE_PER_MACHINE,
     maxAdvanceDays: s.MAX_ADVANCE_DAYS,
     quietHoursStart: s.QUIET_HOURS_START || null,
-    quietHoursEnd: s.QUIET_HOURS_END || null
+    quietHoursEnd: s.QUIET_HOURS_END || null,
+    maxExtensions: s.MAX_EXTENSIONS,
+    maxExtendMin: s.MAX_EXTEND_MIN
   };
 }
 
@@ -198,6 +220,42 @@ function machinePublicAdmin_(m) {
 
 function bookingPublic_(b) {
   return { id: b.id, name: b.name, room: b.room, start: b.start.toISOString(), end: b.end.toISOString(), mode: b.mode };
+}
+
+// The currently-running booking, with the extra fields the Home card needs to
+// offer "Add time" and (for reported unbooked sessions) a "This is me" claim.
+function currentPublic_(b, settings, now) {
+  const isReport = b.mode === 'report';
+  return {
+    id: b.id,
+    name: b.name,
+    room: b.room,
+    start: b.start.toISOString(),
+    end: b.end.toISOString(),
+    mode: b.mode,
+    reported: isReport,
+    claimable: isReport && b.name === 'Unknown person',
+    extUsed: b.extensions || 0,
+    extMax: settings.MAX_EXTENSIONS,
+    // How many minutes could still be added right now (0 = booked solid after this).
+    extendableMin: isReport ? 0 : extendableMinutes_(b, settings)
+  };
+}
+
+// Minutes of free time immediately after this booking's end, capped at the
+// per-extension maximum. Respects other bookings AND quiet hours.
+function extendableMinutes_(b, settings) {
+  const horizonEnd = new Date(b.end.getTime() + settings.MAX_EXTEND_MIN * 60000);
+  const blocked = mergeIntervals_(getBlockedIntervals_(b.machineId, b.end, horizonEnd, settings, b.id));
+  let cap = settings.MAX_EXTEND_MIN;
+  for (let i = 0; i < blocked.length; i++) {
+    const iv = blocked[i];
+    if (iv.end <= b.end) continue;
+    if (iv.start <= b.end) return 0;               // something already occupies the next minute
+    cap = Math.min(cap, Math.floor((iv.start.getTime() - b.end.getTime()) / 60000));
+    break;
+  }
+  return Math.max(0, cap);
 }
 
 // ===================== TIME / SCHEDULING MATH ===============================
@@ -310,7 +368,7 @@ function getStatus_() {
       name: m.name,
       status: m.status,
       note: m.note,
-      current: current ? bookingPublic_(current) : null,
+      current: current ? currentPublic_(current, settings, now) : null,
       freeAt: current ? current.end.toISOString() : null,
       queue: upcoming.map(bookingPublic_)
     };
@@ -407,8 +465,8 @@ function bookMachine_(p) {
     }
 
     const id = Utilities.getUuid().slice(0, 8);
-    const sheet = getSheet_(SHEET_BOOKINGS, BOOKINGS_HEADER);
-    sheet.appendRow([id, name, room, machineId, start, end, 'Active', mode, now]);
+    const sheet = getBookingsSheet_();
+    sheet.appendRow([id, name, room, machineId, start, end, 'Active', mode, now, 0, '']);
 
     const waitMinutes = Math.max(0, Math.round((start.getTime() - now.getTime()) / 60000));
     return { success: true, id: id, start: start.toISOString(), end: end.toISOString(), waitMinutes: waitMinutes };
@@ -439,20 +497,163 @@ function finishNow_(id) {
   }
 }
 
-function cancelBooking_(id) {
+function cancelBooking_(id, reason) {
   if (!id) return { error: 'Missing booking id.' };
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(8000)) return { error: 'Server is busy — try again.' };
   try {
-    const sheet = getSheet_(SHEET_BOOKINGS, BOOKINGS_HEADER);
+    return cancelBookingRow_(id, reason);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Marks a booking Cancelled and records an optional reason. Caller must already
+// hold the script lock (or accept the small race for a single-cell write).
+function cancelBookingRow_(id, reason) {
+  const sheet = getBookingsSheet_();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) {
+      sheet.getRange(i + 1, 7).setValue('Cancelled');
+      if (reason) sheet.getRange(i + 1, 11).setValue(String(reason).slice(0, 140));
+      return { success: true };
+    }
+  }
+  return { error: 'Booking not found.' };
+}
+
+// ---- Extend a currently-running booking by a few minutes ----
+function extendBooking_(p) {
+  const id = (p.id || '').toString();
+  let minutes = parseInt(p.minutes, 10);
+  if (!id) return { error: 'Missing booking id.' };
+  if (!minutes || isNaN(minutes)) return { error: 'Choose how many minutes to add.' };
+  minutes = Math.round(minutes);
+
+  const settings = getSettings_();
+  if (minutes < 1 || minutes > settings.MAX_EXTEND_MIN) {
+    return { error: 'You can add up to ' + settings.MAX_EXTEND_MIN + ' minutes at a time.' };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(8000)) return { error: 'Server is busy — try again.' };
+  try {
+    const now = new Date();
+    const booking = getBookingsRaw_().find(function (b) { return b.id === id; });
+    if (!booking) return { error: 'Booking not found.' };
+    if (booking.status === 'Cancelled') return { error: 'That booking was cancelled.' };
+    if (booking.mode === 'report') return { error: 'This session was reported, not booked, so it cannot be extended.' };
+    if (booking.end <= now) return { error: 'That booking has already ended.' };
+    if (booking.extensions >= settings.MAX_EXTENSIONS) {
+      return { error: 'You have already added time ' + settings.MAX_EXTENSIONS + ' times — that is the limit.' };
+    }
+
+    const horizonEnd = new Date(booking.end.getTime() + settings.MAX_EXTEND_MIN * 60000);
+    const blocked = getBlockedIntervals_(booking.machineId, booking.end, horizonEnd, settings, booking.id);
+    const newEnd = new Date(booking.end.getTime() + minutes * 60000);
+    const conflict = findConflict_(blocked, booking.end, newEnd);
+    if (conflict) {
+      const avail = Math.floor((conflict.start.getTime() - booking.end.getTime()) / 60000);
+      if (avail <= 0) return { error: 'The next booking starts right after yours — there is no room to extend.' };
+      return { error: 'You can add at most ' + avail + ' more minute' + (avail === 1 ? '' : 's') + ' before the next booking.' };
+    }
+
+    const sheet = getBookingsSheet_();
+    sheet.getRange(booking.rowIndex, 6).setValue(newEnd);                     // EndTime
+    sheet.getRange(booking.rowIndex, 10).setValue(booking.extensions + 1);    // Extensions
+    return {
+      success: true,
+      end: newEnd.toISOString(),
+      extUsed: booking.extensions + 1,
+      remaining: settings.MAX_EXTENSIONS - (booking.extensions + 1)
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- Report that a machine is being used by someone who didn't book ----
+// Creates a live "Unknown person" session so the machine reads as in use and
+// can't be double-booked. Optionally cancels the reporter's own booking.
+function reportUnbooked_(p) {
+  const machineId = (p.machineId || '').toString();
+  let minutes = parseInt(p.minutes, 10);
+  const cancelId = (p.cancelId || '').toString();
+  const reason = (p.reason || '').toString().trim().slice(0, 140);
+
+  if (!machineId) return { error: 'Choose a machine.' };
+  if (!minutes || isNaN(minutes)) return { error: 'Enter the time left showing on the machine.' };
+  minutes = Math.round(minutes);
+  if (minutes < 1) return { error: 'Enter the time left showing on the machine.' };
+
+  const settings = getSettings_();
+  if (minutes > settings.MAX_DURATION_MIN) minutes = settings.MAX_DURATION_MIN;
+
+  const machine = getMachinesRaw_().find(function (m) { return m.id === machineId; });
+  if (!machine || machine.status === 'Retired') return { error: 'That machine no longer exists.' };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { error: 'Server is busy — try again.' };
+  try {
+    const now = new Date();
+
+    // A session already running on this machine (other than the reporter's own
+    // booking, which we're about to cancel) means there's nothing new to report.
+    const running = getBookingsRaw_().filter(function (b) {
+      return b.machineId === machineId && b.id !== cancelId &&
+        b.status !== 'Cancelled' && b.start <= now && b.end > now;
+    });
+
+    let createdId = null;
+    let end = new Date(now.getTime() + minutes * 60000);
+
+    if (!running.length) {
+      // Don't overlap an upcoming booking — cap the reported session at the next block.
+      const horizonEnd = new Date(now.getTime() + minutes * 60000 + 60000);
+      const blocked = getBlockedIntervals_(machineId, now, horizonEnd, settings, cancelId || undefined);
+      const conflict = findConflict_(blocked, now, end);
+      if (conflict && conflict.start > now) end = new Date(conflict.start.getTime());
+
+      if (end.getTime() > now.getTime()) {
+        createdId = Utilities.getUuid().slice(0, 8);
+        const sheet = getBookingsSheet_();
+        sheet.appendRow([createdId, 'Unknown person', '', machineId, now, end, 'Active', 'report', now, 0,
+          reason || 'Reported in use in person']);
+      }
+    }
+
+    if (cancelId) cancelBookingRow_(cancelId, reason || 'Someone was already using it (not booked)');
+
+    return { success: true, id: createdId, end: end.toISOString(), alreadyRunning: running.length > 0 };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- Volunteer to claim an "Unknown person" reported session ----
+function claimUnbooked_(p) {
+  const id = (p.id || '').toString();
+  const name = (p.name || '').toString().trim().slice(0, 40);
+  const room = (p.room || '').toString().trim().slice(0, 10);
+  if (!id) return { error: 'Missing session id.' };
+  if (!name) return { error: 'Enter your name.' };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(8000)) return { error: 'Server is busy — try again.' };
+  try {
+    const sheet = getBookingsSheet_();
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]) === String(id)) {
-        sheet.getRange(i + 1, 7).setValue('Cancelled');
+        if (String(data[i][7]) !== 'report') return { error: 'That session cannot be claimed.' };
+        if (String(data[i][6]) === 'Cancelled') return { error: 'That session is no longer active.' };
+        sheet.getRange(i + 1, 2).setValue(name);          // Name
+        if (room) sheet.getRange(i + 1, 3).setValue(room); // Room
         return { success: true };
       }
     }
-    return { error: 'Booking not found.' };
+    return { error: 'Session not found.' };
   } finally {
     lock.releaseLock();
   }
@@ -538,13 +739,18 @@ function adminUpdateSettings_(pin, partial) {
   if (!settings) return { error: 'Incorrect PIN.' };
 
   const sheet = getSheet_(SHEET_SETTINGS, SETTINGS_HEADER);
-  const numericKeys = ['MAX_DURATION_MIN', 'MIN_DURATION_MIN', 'MAX_QUEUE_PER_MACHINE', 'MAX_ADVANCE_DAYS'];
+  const numericKeys = ['MAX_DURATION_MIN', 'MIN_DURATION_MIN', 'MAX_QUEUE_PER_MACHINE', 'MAX_ADVANCE_DAYS', 'MAX_EXTEND_MIN'];
   const stringKeys = ['QUIET_HOURS_START', 'QUIET_HOURS_END'];
 
   Object.keys(partial || {}).forEach(function (key) {
     if (key === 'ADMIN_PIN') {
       const v = (partial[key] || '').toString().trim();
       if (v.length >= 4) setSettingValue_(sheet, key, v);
+      return;
+    }
+    if (key === 'MAX_EXTENSIONS') {
+      const n = parseInt(partial[key], 10);
+      if (!isNaN(n) && n >= 0) setSettingValue_(sheet, key, n); // 0 disables extending
       return;
     }
     if (numericKeys.indexOf(key) !== -1) {
