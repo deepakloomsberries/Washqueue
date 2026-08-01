@@ -13,6 +13,14 @@ the callout at the end of Part 1 before you paste the new `Code.gs` in.
 ## What's in this version
 
 - **Home** — same as before: see each machine's status at a glance and book it.
+- **Add time** — running late? On your own in-use machine, tap **Add time** to
+  extend the finish time by a few minutes (default: up to 20 min at a time,
+  twice per booking). It won't let you overrun the next person's booking.
+- **"Someone's using it?"** — arrived to find a machine already running with no
+  booking? Report it (or pick it as the reason when you cancel your own booking)
+  and enter the time left showing on the machine. It shows as **in use by
+  someone (not booked)** so nobody books it by mistake — and anyone actually
+  using it can tap **This is me** to put their name on it.
 - **Calendar** — a real day-by-day timeline of every machine. Tap any open slot
   to schedule that machine for later instead of joining the queue.
 - **Upcoming** — a simple list of everything coming up, with an "All / Mine" filter.
@@ -22,8 +30,8 @@ the callout at the end of Part 1 before you paste the new `Code.gs` in.
     and anything already booked on it is cancelled automatically).
   - Retire a machine for good, or bring one back.
   - Change booking rules: max/min booking length, how many can queue at once,
-    how many days ahead people can schedule, optional quiet hours, and the
-    Admin PIN itself.
+    how many days ahead people can schedule, how many times / how long a booking
+    can be extended, optional quiet hours, and the Admin PIN itself.
 - Still installable to a phone's home screen, still auto-refreshes, still free.
 
 ---
@@ -64,6 +72,11 @@ unlock with `1234`, and change it under Settings before you share the link
 > Delete) and let the new Code.gs recreate it. Your Machines/Settings tabs
 > will be created fresh alongside it. This only affects historical bookings —
 > nothing else in your sheet is touched.
+>
+> **Adding the "add time" and "report in use" features to an existing sheet?**
+> No action needed — the new `Extensions` and `Reason` columns are added to
+> your Bookings tab automatically the first time the updated backend writes to
+> it. Existing rows keep working.
 
 ---
 
